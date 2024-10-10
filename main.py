@@ -1,3 +1,7 @@
+"""
+ALL REQUESTS DO REQUIRE THE API KEY!
+"""
+
 from __future__ import annotations
 from typing import *;
 
@@ -30,18 +34,33 @@ def is_holder_api_key_valid(key:str)->bool:
 def is_read_ony_api_key_valid(api_key:str)->bool:
     return api_key in READ_ONLY_API_KEYS;
 
+
+def pow_approver(produced_hash:HexStr)->bool:
+    count = 0;
+    for i1 in produced_hash:
+        zero_count += i1 == "a" ;
+    return count > 14;
+
+
 class Block:
     def __init__(self):
         self.index = 0;
         self.data:HexStr = "";
         self.unix:int = 0;
+        self.nonce:int = 0;
         self.prevhash:HexStr = "";
 
     def hash(self)->HexStr:
         h = hashlib.new(HASH_ALGHO);
-        h.update((self.index.__str__()+self.data+self.prevhash+str(self.unix)));
+        h.update(self.bcontent);
         return h.hexdigest;
 
+    def find_nonce(self)->int:
+        nonce = 0;
+        while True:
+            self.nonce = nonce;
+            if pow_approver(hash()) == True:
+                return nonce;
 
   
     def json(self)->Dict[str, Any]:
@@ -49,6 +68,7 @@ class Block:
             "index":self.index,
             "data":self.data,
             "unix":self.unix,
+            "nonce":self.nonce,
             "prevhash":self.prevhash,
         };
 
@@ -65,24 +85,43 @@ class Block:
         return output;
 
 
+    @property
+    def bcontent(self)->bytes:
+        return (self.index.__str__()+self.data+self.prevhash+str(self.unix)+str(self.nonce)).encode("utf-8")
+
+
 
 
 class HolderAddrss:
-    def __init__(self):
-        self.internet_address = "";
+    def __init__(self, internet_address, api_key):
+        self.internet_address = internet_address;
         self.api_key = api_key;
 
     def get_chain(self, your_api_key:str)->List[Dict[str,Any]]:
         print(f"getting chain from {self.internet_address}");
-        r = requests.get(self.internet_address+"/api/get_chain",params=["api_key":your_api_key]);
+
+        r = requests.get(
+            self.internet_address+"/api/get_chain",
+            params={"api_key":your_api_key}
+            );
+        
         print(f"response from {self.hinternet_address}");
         json =  r.json();
         if json["is_ok"] == True:
             return json["data"];
         return [];
 
+    def send_block(self, block:Block, your_api_key:str):
+        print(f"sending the block into {self.internet_address} of api_key of {self.api_key}");
+        json_to_send = {"block":block.json()};
+        json_to_send["api_key"] = your_api_key;
+        res = requests.post(self.internet_address+"/api/add_block", json=json_to_send);
+        print(f"sending the block into {self.internet_address} of api_key of {self.api_key} was this {res.json()}")
+        
+        
 
-class WaitingForValidationTrans:
+
+class ExternalTransRequest:
     def __init__(self, internet_address_of_sender, api_key_of_sender,  uuid, data:HexStr, state:int=False):
         self.internet_address_of_sender = internet_address_of_sender;
         self.api_key_of_sender = api_key_of_sender;
@@ -93,18 +132,18 @@ class WaitingForValidationTrans:
 
     @property
     def not_validated_nor_rejected(self):
-        return self.state = 1;
+        return self.state == 1;
     
 
     @property
     def validated(self):
-        return self.state = 2;
+        return self.state == 2;
     
 
 
     @property
     def rejected(self):
-        return self.state = 3;   
+        return self.state == 3;   
 
 
     def json(self):
@@ -115,10 +154,37 @@ class WaitingForValidationTrans:
             "data":self.data,
         };
 
+
+
+class InternalTransRequest:
+    def __init__(self, data:HexStr, uuid:str):
+        self.data = data;
+        self.uuid = uuid;
+        self.approvers = [] #api keys those who approved
+
+
+    def add_approver(self, api_key)->0:
+        """
+        0 -> already exists
+        1 -> ok
+        """
+        if api_key in self.approvers:
+            return 0;
+        self.approvers.append(api_key);
+        return 1;
+
+
+    @property 
+    def approvers_count(self)->int:
+        return self.approvers.__len__();
+
+
+
 class Holder:
     def __init__(self, api_key):
         self.api_key = api_key;
-        self.waiting_for_validation:Dict[str,WaitingForValidationTrans] = {};
+        self.external_trans_request:Dict[str,ExternalTransRequest] = {};
+        self.internal_trans:Dict[str, InternalTransRequest] = {};
         self.sent_trans:Dict 
         self.chain = [];
         self.holders = [];
@@ -131,7 +197,7 @@ class Holder:
             return self.chain[n];
 
 
-    def get_chain_json()->List[Dict[str,Any]]:
+    def get_chain_json(self)->List[Dict[str,Any]]:
         output = [];
         block:Block;
         for block in self.chain:
@@ -139,6 +205,9 @@ class Holder:
                 block.json()
             );
         return output;
+
+
+
 
 
     def update_chain(self)->None:
@@ -153,26 +222,24 @@ class Holder:
         return None;
                 
 
-    def add_waiting_for_validations_trans(self, target:WaitingForValidationTrans)->int:
+    def add_external_trans_request(self, target:ExternalTransRequest)->int:
         """
         return 0 if it new 
         returns 1 if it it exists and not validated nor rejected yet
         return 2 if it exists and is validated
         return 3 if it exists and is rejected
         """
-        exists:bool = target.uuid in self.waiting_for_validation:
+        exists:bool = target.uuid in self.external_trans_request;
         if exists == False:
             print("a new transaction!");
-            self.waiting_for_validation[target.uuid] = target;
-            self.waiting_for_validation[target.uuid].state = 1;
+            self.external_trans_request[target.uuid] = target;
+            self.external_trans_request[target.uuid].state = 1;
             return 0;
 
         if exists == True:
-            return self.WaitingForValidationTrans["uuid"];
+            return self.external_trans_request["uuid"];
 
-    @property
-    def chain_len(self)->int:
-        return self.chain.__len__();
+
 
 
 
@@ -181,17 +248,109 @@ class Holder:
         -1 means uuid did not exists!
         1 means ok
         """
-        if uuid not in self.waiting_for_validation:
+        if uuid not in self.external_trans_request:
             print(f"transaction of {uuid} does not exist in here!");
             return -1;
-        trans:WaitingForValidationTrans = self.waiting_for_validation[uuid];
+        trans:ExternalTransRequest = self.external_trans_request[uuid];
         internet_address_off_sender:str = trans.internet_address_of_sender;
         requests.get(internet_address_off_sender+"/api/know_trans_as_approved/", params={"uuid":uuid});
         return 1;
 
 
-    def on_trans_being_approved(self, uuid:str)->int:
 
+    def on_trans_being_approved(self, uuid:str, who_api_key:str)->int:
+        """
+        -1 -> uuid did not exist!
+        0 -> api key already approved me
+        1 -> ok
+        2 -> ok and tranaction is approved by more than 51%
+        """
+        if uuid not in self.internal_trans:
+            print(f"internal trans of {uuid} did not exist for approval");
+            return -1;
+
+        target:InternalTransRequest =  self.internal_trans[uuid];
+        if uuid in target.approvers:
+            print(f"api key of {who_api_key} has already approved {uuid}!");
+            return 0;
+
+        target.add_approver(api_key=who_api_key);
+
+        if self.calculate_approval_ratio_for_internal_trans(uuid=uuid) >= 0.51:
+            
+            self.blockify_and_broadcast_trans(uuid=uuid);
+
+        return 1;
+
+
+    def on_trans_being_rejected(self, uuid:str, who_api_key:str)->int:
+        print(f"{who_api_key} disapproved the {uuid}; we dont care btw");
+    
+
+    def calculate_approval_ratio_for_internal_trans(self, uuid:str)->float:
+        """
+        -1.0 trans not found
+        """
+        if uuid not in self.internal_trans:
+            print(f"internal trans of {uuid} does not exist! we cant calcualte network approval for it");
+            return -1;
+        return self.internal_trans[uuid].approvers_count / self.holder_count;
+
+
+    def blockify_and_broadcast_trans(self, uuid:str)->None|Block:
+        if uuid not in self.internal_trans:
+            print("internal trans of {uuid} does not exsit; we cant blockfiy it!")
+            return None;
+        block:Block = self.blockify_internal_trans(uuid=uuid);
+        self.add_block(block=block);
+        self.broadcast_block(block=block);
+    
+    
+
+    def blockify_internal_trans(self, uuid:str)->Block:
+        internal_trans:InternalTransRequest = self.internal_trans[uuid];
+        output:Block = Block();
+        output.index = self.new_chain_block_index;
+        output.data = internal_trans.data;
+        output.unix = time.time_ns();
+        output.nonce = 0;
+        output.prevhash = self.prev_hash();
+        output.find_nonce();
+        del self.internal_trans[uuid];
+        return output;
+
+
+    def broadcast_block(self, block:Block):
+        holder:Holder;
+        for holder in self.holders:
+            holder.send_block(block, your_api_key=self.api_key);
+
+            
+    def add_block(self, block:Block):
+        #adds the block with no question like a good boy
+        self.chain.append(block);
+    
+
+    @property
+    def chain_len(self)->int:
+        return self.chain.__len__();
+
+    @property
+    def new_chain_block_index(self)->int:
+        return self.chain_len;
+
+    @property 
+    def holder_count(self)->int:
+        return self.holders.__len__();
+
+    @property 
+    def prev_hash(self)->HexStr:
+        return self.last_block.hash();
+    
+    @property 
+    def last_block(self)->Block:
+        return self.chain[-1];
+    
 
 
 def update_holder(holder:Holder):
@@ -200,6 +359,7 @@ def update_holder(holder:Holder):
         time.sleep(5);
         holder.update_chain();
 
+print(HOLDER_API_KEYS)
 holder:Holder = Holder(api_key=input("ENTER_API_KEY:"));
 app = Flask("holder");
 
@@ -245,8 +405,8 @@ def hh3():
     data = flask.request.args.get("data")
     if data == None:
         return {"is_ok":False, "msg":"data is missing!"}; 
-    target = WaitingForValidationTrans(internet_address_of_sender=internet_address_of_sender, api_key_of_sender=api_key_of_sender, uuid=uuid, data=data, state=1);
-    return {"is_ok":True, "msg":"all is ok", "data":holder.add_waiting_for_validations_trans()}; 
+    target = ExternalTransRequest(internet_address_of_sender=internet_address_of_sender, api_key_of_sender=api_key_of_sender, uuid=uuid, data=data, state=1);
+    return {"is_ok":True, "msg":"all is ok", "data":holder.add_external_trans_request()}; 
 
 
 @app.get("/api/approve_trans")
@@ -257,11 +417,37 @@ def hh4():
     holder.tell_approvement_of_trans_to_submitter(uuid=uuid);
 
 
+@app.post("/api/add_block")
+def hh5():
+    api_key = flask.request.args.get("api_key");
+    if api_key == None:
+        return {"is_ok":False, "msg":"api key is missing"};
+    block_raw:Dict[str,Any] = flask.request.args.get("block");
+    if block_raw == None:
+        return {"is_ok":False, "msg":"block_data_is_missing"};
+    block_fields = [
+        "index",    
+        "data", 
+        "unix", 
+        "nonce",    
+        "prevhash", 
+        ];
+    for field_name in block_fields:
+        field_value = block_raw.get(field_name);
+        if field_value == None:
+            return {
+                "is_ok":False,
+                "msg":f"field_{field_name}_is_missing"
+            }
+    block:Block = Block();
+    block.index = block_raw["index"];
+    block.data = block_raw["data"];
+    block.unix = block_raw["unix"];
+    block.nonce = block_raw["nonce"];
+    block.prevhash = block_raw["prevhash"];
+    holder.add_block(block);
 
 
-@app.get("/api/reject_trans")
-def hh4():
-    pass
 
 
 
