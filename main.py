@@ -4,19 +4,21 @@ ALL REQUESTS DO REQUIRE THE API KEY!
 
 from __future__ import annotations
 from typing import *;
-
 import hashlib;
 import time;
-
+import random;
 import threading;
 
 from flask import Flask;
 import flask;
 import requests
+import jinja2
+from jinja2 import Template
+
 
 HexStr = str;
 
-HASH_ALGHO = "sha256"
+HASH_ALGHO = "sha512"
 
 HOLDER_API_KEYS =  [
     "12345",
@@ -27,6 +29,13 @@ READ_ONLY_API_KEYS = [
     "abcd",
     "qwer"
 ]
+
+def generate_uuid()->str:
+    output = "";
+    c= random.choice;
+    for i1 in range(4):
+        output += c("qwrtpsdfghjklzxcvbnm") + c("auioe") + c("qwrtpsdfghjklzxcvbnm") + "-"
+    return output
 
 def is_holder_api_key_valid(key:str)->bool:
     return key in HOLDER_API_KEYS;
@@ -40,6 +49,14 @@ def pow_approver(produced_hash:HexStr)->bool:
     for i1 in produced_hash:
         zero_count += i1 == "a" ;
     return count > 14;
+
+def return_file_content(path:str)->str:
+    with open(path, mode="r", encoding="utf-8") as f1:
+        return f1.read();
+
+def file_as_template(path:str)->jinja2.Template:
+    return jinja2.Template(return_file_content(path=path));
+
 
 
 class Block:
@@ -116,7 +133,15 @@ class HolderAddrss:
         json_to_send = {"block":block.json()};
         json_to_send["api_key"] = your_api_key;
         res = requests.post(self.internet_address+"/api/add_block", json=json_to_send);
-        print(f"sending the block into {self.internet_address} of api_key of {self.api_key} was this {res.json()}")
+        print(f"sending the block into {self.internet_address} of api_key of {self.api_key} was this {res.json()}");
+
+
+    def ask_for_trans_approval(self, trans:InternalTransRequest, your_api_key):
+        print(f"asking for approval of {uuid} from {self.api_key} {self.internet_address}");
+        json_to_send:Dict = {"trans":InternalTransRequest.json_lite(), "api_key":your_api_key};
+        requests.post(self.internet_address+"/ask_for_trans_approval", json=json_to_send);
+
+
         
         
 
@@ -174,9 +199,25 @@ class InternalTransRequest:
         return 1;
 
 
+    def json(self)->Dict[str, Any]:
+        return {
+            "data":self.data,
+            "uuid":self.uuid,
+            "approvers":self.approvers,
+            };
+
+    def json_lite(self):
+         #like json but without approvers.
+         return {
+            "data":self.data,
+            "uuid":self.uuid,
+            };       
+
     @property 
     def approvers_count(self)->int:
         return self.approvers.__len__();
+
+
 
 
 
@@ -185,7 +226,6 @@ class Holder:
         self.api_key = api_key;
         self.external_trans_request:Dict[str,ExternalTransRequest] = {};
         self.internal_trans:Dict[str, InternalTransRequest] = {};
-        self.sent_trans:Dict 
         self.chain = [];
         self.holders = [];
 
@@ -330,6 +370,18 @@ class Holder:
         #adds the block with no question like a good boy
         self.chain.append(block);
     
+    def add_internal_trans(self, data:HexStr)->str:
+        #returns uuid
+        generate_uuid:str = generate_uuid();
+        InternalTransRequest(data=data, uuid=generate_uuid);
+        return generate_uuid;
+
+    def broadcast_internal_trans(self, uuid:str):
+        holder:HolderAddrss;
+        for hodler in self.holders:
+            holder.ask_for_trans_approval(uuid=uuid, your_api_key=self.api_key);
+
+    
 
     @property
     def chain_len(self)->int:
@@ -353,11 +405,11 @@ class Holder:
     
 
 
-def update_holder(holder:Holder):
+"""def update_holder(holder:Holder):
     print("started the tred of chain updator")
     while True:
         time.sleep(5);
-        holder.update_chain();
+        holder.update_chain();"""
 
 print(HOLDER_API_KEYS)
 holder:Holder = Holder(api_key=input("ENTER_API_KEY:"));
@@ -365,9 +417,21 @@ app = Flask("holder");
 
 
 
-chain_updater_thread = threading.Thread(target=update_holder, args=holder, daemon=True)
-chain_updater_thread.start();
+"""chain_updater_thread = threading.Thread(target=update_holder, args=(holder,), daemon=True)
+chain_updater_thread.start();"""
 
+
+
+@app.get("/api/add_trans")
+def hh0():
+    api_key:str = flask.request.args.get("api_key");
+    if api_key == None:
+        return {"is_ok":False, "msg":"api_key_is_missing"};
+    if is_holder_api_key_valid(api_key) == False:
+        return {"is_ok":False, "msg":"api_key_is_invalid"};
+    data:HexStr = flask.requ
+    uuid:str = holder.add_internal_trans(data);
+    holder.broadcast_internal_trans(uuid=uuid);
 
 
 
@@ -446,6 +510,13 @@ def hh5():
     block.nonce = block_raw["nonce"];
     block.prevhash = block_raw["prevhash"];
     holder.add_block(block);
+
+
+@app.get("/ui/index")
+def hh6():
+    template:Template = file_as_template("./webpages/holder/index.html");
+    return template.render({"holder":holder});
+
 
 
 
