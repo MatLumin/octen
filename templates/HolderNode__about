@@ -1,0 +1,6 @@
+
+
+<title>about</title>
+
+<h3>{{holder_node.self_routing_data.host}}:{{holder_node.self_routing_data.port}} - {{holder_node.self_routing_data.uti}}</h3>
+<h3>API KEY = {{holder_node.api_key}}</h3>

@@ -47,7 +47,7 @@ def is_read_ony_api_key_valid(api_key:str)->bool:
 def pow_approver(produced_hash:HexStr)->bool:
     count = 0;
     for i1 in produced_hash:
-        zero_count += i1 == "a" ;
+        count += i1 == "a" ;
     return count > 14;
 
 def return_file_content(path:str)->str:
@@ -222,12 +222,15 @@ class InternalTransRequest:
 
 
 class Holder:
+    """
+    class for holder node of network
+    """
     def __init__(self, api_key):
-        self.api_key = api_key;
+        self.api_key = api_key; #here we store the api key of holder
         self.external_trans_request:Dict[str,ExternalTransRequest] = {};
         self.internal_trans:Dict[str, InternalTransRequest] = {};
-        self.chain = [];
-        self.holders = [];
+        self.chain = []; #the chain of accepted blocks from network
+        self.holders = []; #
 
 
     def get_nth_block(self, n:int)->Block|None:
@@ -375,6 +378,7 @@ class Holder:
         generate_uuid:str = generate_uuid();
         InternalTransRequest(data=data, uuid=generate_uuid);
         return generate_uuid;
+
 
     def broadcast_internal_trans(self, uuid:str):
         holder:HolderAddrss;

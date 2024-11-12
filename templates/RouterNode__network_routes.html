@@ -1,0 +1,45 @@
+<style>
+
+</style>
+
+
+
+
+<section>
+    <h1>Holder Nodes</h1>
+    <table>
+        <tr>
+            <th>ip</th>
+            <th>port</th>
+            <th>uti</th>
+            <th>is online?</th>
+            <th>is valid?</th>
+            <th>href</th>
+        </tr>
+        {% for hrt in holders %}
+        <tr>
+            <td>{{hrt.host}}</td>
+            <td>{{hrt.port}}</td>
+            <td>{{hrt.uti}}</td>
+            <td>{{hrt.is_online()}}</td>
+            <td>{{hrt.is__valid_by_auth_for_holder(ROUTER_ACCESS_KEY)}}</td>
+            <td><a href="http://{{hrt.host}}:{{hrt.port}}/ui/about">ABOUT</a></td>
+        </tr>
+        {% endfor %}
+        
+    </table>
+</section>
+
+
+<h1>---------------</h1>
+
+
+<section>
+    <h1>Auth Node</h1>
+    <div>
+        <h2>IP:{{authnode.host}}</h1>
+        <h2>PORT:{{authnode.port}}</h1>
+        <h2>UTI:{{authnode.uti}}</h1>
+        <h1>---------------</h1>
+    </div>
+</section>
